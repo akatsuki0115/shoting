@@ -1,0 +1,731 @@
+#include "DxLib.h"
+#include <math.h>
+
+#define ENEMY_NUM_MAX 20
+#define Bullet_NUM_MAX 5
+#define BossBullet_NUM_MAX 100
+#define ITEM_NUM_MAX 3
+
+#define sqr(n) ((n)*(n))
+
+//各種データ
+typedef struct tagTemp
+{
+	double x;
+	double y;
+	double r;
+	double vx;
+	double vy;
+	int valid_flag;
+}Temp;
+
+typedef struct tagPlayer
+{
+	Temp player;
+}Player;
+
+typedef struct tagBullet
+{
+	Temp bullet;
+	int attack;
+}Bullet;
+
+
+//敵データ
+typedef struct tagEnemy
+{
+	Temp enemy;
+	int hp;
+}Enemy;
+
+typedef struct tagBoss
+{
+	Temp boss;
+	int hp;
+}Boss;
+
+//弾データ
+typedef struct tagEnebullet
+{
+	Temp enebullet;
+	int attack;
+}EneBullet;
+
+typedef struct tagBossbullet
+{
+	Temp bossbullet;
+	int attack;
+}Bossbullet;
+
+typedef struct tagItem
+{
+	Temp item;
+}Item;
+
+//距離判定
+double distance(Temp t1, Temp t2)
+{
+	return sqrt(sqr(t1.x - t2.x) + sqr(t1.y - t2.y)) - (t1.r + t2.r);
+}
+
+
+//プログラムは WinMain から始まります
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
+{
+	//ウィンドウモードに設定
+	ChangeWindowMode(true);
+
+	//ウィンドウサイズを指定
+	SetGraphMode(640, 480, 16);
+
+	//ＤＸライブラリ初期化処理
+	if (DxLib_Init() == -1)
+	{//エラーが起きたら直ちに終了
+		return -1;
+	}
+
+	//描画先画面を裏画面にセット
+	SetDrawScreen(DX_SCREEN_BACK);
+
+	//シーン
+	int scene = 0;
+
+	//カウント
+	int count = 0;
+
+	//スコア
+	int score = 0;
+	int scoreA = 0;
+
+	//背景
+	int back1_gra = LoadGraph("画像/____Rmake___.png");
+	int back_x = 320;
+	int back_y = 240;
+
+	//ストップ
+	int stop = 0;
+
+	//爆破演出
+	int explode_gra[48];
+	LoadDivGraph("画像/爆発.png", 48, 8, 6, 64, 64, explode_gra);
+	
+	//プレイヤー
+	Player player1;
+	int player1_gra = LoadGraph("画像/GAME_002.png");
+
+	//プレイヤーの弾
+	Bullet bullet1[Bullet_NUM_MAX]; //bullet_gra[3]
+	int bullet1_max = 0;
+
+	//各種アイテム
+	Item plass[ITEM_NUM_MAX];
+
+	//敵
+	Enemy enemy1[ENEMY_NUM_MAX];
+	int enemy1_gra = LoadGraph("画像/Game_019.png");
+
+	//敵の弾
+	EneBullet enebullet1[ENEMY_NUM_MAX];
+	EneBullet enebullet2[ENEMY_NUM_MAX];
+	int bullet_gra[5];
+	LoadDivGraph("画像/弾1.png", 5, 1, 5, 16, 16, bullet_gra);
+
+	//ボス
+	Boss Boss1;
+
+	//ボスの弾
+	Bossbullet Bossbullet1[BossBullet_NUM_MAX];
+	Bossbullet Bossbullet2[BossBullet_NUM_MAX];
+	Bossbullet Bossbullet3[BossBullet_NUM_MAX];
+	int Boss1_gra = LoadGraph("画像/ボス1.png");
+
+	//フォントサイズ変更
+	SetFontSize(25);
+
+	//メインループ
+	while (ProcessMessage() == 0 && CheckHitKey(KEY_INPUT_ESCAPE) == 0)
+	{
+		// 画面を初期化する
+		ClearDrawScreen();
+
+		//タイトル画面
+		if (scene == 0)
+		{
+			//シーン遷移
+			if (CheckHitKey(KEY_INPUT_RETURN) == 1)
+			{
+				//ゲーム画面に遷移
+				scene = 1;
+
+				//カウント初期化
+				count = 0;
+				score = 0;
+				scoreA = 0;
+
+				//プレイヤー初期化
+				player1.player.x = 320;
+				player1.player.y = 240;
+				player1.player.r = 10;
+				player1.player.vx=player1.player.vy = 3;
+
+				//敵初期化
+				for (int i = 0; i < ENEMY_NUM_MAX; i++)
+				{
+					enemy1[i].enemy.valid_flag = 0;
+				}
+
+				//自弾初期化
+				for (int j = 0; j < Bullet_NUM_MAX; j++)
+				{
+					bullet1[j].bullet.valid_flag = 0;
+				}
+
+				bullet1_max = 0;
+
+				Boss1.boss.valid_flag = 0;
+
+				for (int k = 0; k < BossBullet_NUM_MAX; k++)
+				{
+					Bossbullet1[k].bossbullet.valid_flag = 0;
+					Bossbullet2[k].bossbullet.valid_flag = 0;
+					Bossbullet3[k].bossbullet.valid_flag = 0;
+				}
+			}
+			//背景を描画
+			DrawBox(0, 0, 640, 480, GetColor(0, 0, 0), 1);
+
+			//文字列を描画
+			DrawString(100, 180, "試作ゲー(stg.ver)", GetColor(255, 255, 255));
+			DrawString(130, 300, "Press Enter Key!", GetColor(255, 255, 255));
+		}
+
+		//ゲーム画面
+		else if (scene == 1)
+		{
+			//背景スクロール
+			DrawRotaGraph(back_x, back_y, 1.0, 0.0, back1_gra, TRUE);
+			DrawRotaGraph(-640 + back_x, back_y, 1.0, 0.0, back1_gra, TRUE);
+			back_x++;
+			if (back_x == 960)
+			{
+				back_x = 320;
+			}
+			//キー入力で移動
+			if (CheckHitKey(KEY_INPUT_LEFT) == 1)
+			{
+				player1.player.x -= player1.player.vx;
+			}
+
+			if (CheckHitKey(KEY_INPUT_RIGHT) == 1)
+			{
+				player1.player.x += player1.player.vx;
+			}
+
+			if (CheckHitKey(KEY_INPUT_UP) == 1)
+			{
+				player1.player.y -= player1.player.vy;
+			}
+
+			if (CheckHitKey(KEY_INPUT_DOWN) == 1)
+			{
+				player1.player.y += player1.player.vy;
+			}
+
+			//制限
+			if (player1.player.x < player1.player.r)
+			{
+				player1.player.x = player1.player.r;
+			}
+
+			if (player1.player.x > 640 - player1.player.r)
+			{
+				player1.player.x = 640 - player1.player.r;
+			}
+
+			if (player1.player.y < player1.player.r)
+			{
+				player1.player.y = player1.player.r;
+			}
+
+			if (player1.player.y > 480 - player1.player.r)
+			{
+				player1.player.y = 480 - player1.player.r;
+			}
+
+			//敵を追加
+			if (count % 20 == 0 && count >= 180 && count<700) {
+				int i = 0;
+				int speed_max = 7;
+
+				//敵を追加できるか探索
+				for (i = 0; i < ENEMY_NUM_MAX; i++)
+				{
+					//フラグが0ならば探索中止
+					if (enemy1[i].enemy.valid_flag == 0)
+					{
+						break;
+					}
+				}
+
+				//追加
+				if (i != ENEMY_NUM_MAX)
+				{
+					//敵のステータスを設定
+					enemy1[i].enemy.r = 15;
+					enemy1[i].enemy.x = 640 + enemy1[i].enemy.r;
+					enemy1[i].enemy.y = (double)(GetRand(480 - (enemy1[i].enemy.r * 2)) + enemy1[i].enemy.r);
+					enemy1[i].enemy.vx = -1 - (double)GetRand(speed_max - 1);
+					enemy1[i].enemy.vy = 0;
+					enemy1[i].hp = 1;
+					enemy1[i].enemy.valid_flag = 1;
+
+					enebullet1[i].enebullet.r = 4;
+					enebullet1[i].enebullet.x = enemy1[i].enemy.x;
+					enebullet1[i].enebullet.y = enemy1[i].enemy.y;
+					enebullet1[i].enebullet.vx = enemy1[i].enemy.vx - 1;
+					enebullet1[i].enebullet.vy = 0;
+					enebullet1[i].attack = 1;
+					
+					enebullet2[i].enebullet.r = 4;
+					enebullet2[i].enebullet.x = enemy1[i].enemy.x;
+					enebullet2[i].enebullet.y = enemy1[i].enemy.y;
+					enebullet2[i].enebullet.vx = enemy1[i].enemy.vx - 1;
+					enebullet2[i].enebullet.vy = -enebullet2[i].enebullet.vx*(player1.player.y - enemy1[i].enemy.y) / (enemy1[i].enemy.x - player1.player.x);
+					enebullet2[i].attack = 1;
+				}
+			}
+
+
+			//ボス追加
+			if (count == 1000)
+			{
+				Boss1.boss.r = 50;
+				Boss1.boss.x = 640 + Boss1.boss.r;
+				Boss1.boss.y = 240;
+				Boss1.boss.vx = -1;
+				Boss1.boss.vy = 0;
+				Boss1.hp = 50;
+				Boss1.boss.valid_flag = 1;
+			}
+
+			if (Boss1.boss.valid_flag == 1 &&Boss1.boss.x <= 640 - Boss1.boss.r)
+			{
+				Boss1.boss.vx = 0;
+				if (count == 1150) {
+					Boss1.boss.vy = -1;
+				}
+				
+				if (Boss1.boss.y == 0 || Boss1.boss.y == 480 )
+				{
+					Boss1.boss.vy = -Boss1.boss.vy;
+				}
+
+				if (count >= 1150 && count % 40 == 0) {//直進
+
+					int k = 0;
+
+					//弾を追加できるか探索
+					for (k = 0; k < BossBullet_NUM_MAX; k++)
+					{
+						//フラグが0ならば探索中止
+						if (Bossbullet1[k].bossbullet.valid_flag == 0)
+						{
+							break;
+						}
+					}
+
+					if (k != BossBullet_NUM_MAX) {
+
+						Bossbullet1[k].bossbullet.r = 4;
+						Bossbullet1[k].bossbullet.x = Boss1.boss.x - Boss1.boss.r;
+						Bossbullet1[k].bossbullet.y = Boss1.boss.y;
+						Bossbullet1[k].bossbullet.vx = -1;
+						Bossbullet1[k].bossbullet.vy = 0;
+						Bossbullet1[k].attack = 1;
+						Bossbullet1[k].bossbullet.valid_flag = 1;
+					}
+				}
+				if (count >= 1150 && count % 70 == 0) 
+				{
+						int l = 0;
+
+						for (l = 0; l < BossBullet_NUM_MAX; l++)
+						{
+							if (Bossbullet2[l].bossbullet.valid_flag == 0)
+							{
+								break;
+							}
+						}
+
+						if (l != BossBullet_NUM_MAX) {
+							Bossbullet2[l].bossbullet.r = 4;
+							Bossbullet2[l].bossbullet.x = Boss1.boss.x ;
+							Bossbullet2[l].bossbullet.y = Boss1.boss.y - Boss1.boss.r;
+							Bossbullet2[l].bossbullet.vx = -5;
+							Bossbullet2[l].bossbullet.vy = -Bossbullet2[l].bossbullet.vx*(player1.player.y - (Boss1.boss.y - Boss1.boss.r)) / (Boss1.boss.x - player1.player.x);
+							Bossbullet2[l].attack = 1;
+							Bossbullet2[l].bossbullet.valid_flag = 1;
+						}
+
+						int m = 0;
+
+						for (m = 0; m < BossBullet_NUM_MAX; m++)
+						{
+							if (Bossbullet3[m].bossbullet.valid_flag == 0)
+							{
+								break;
+							}
+						}
+
+						if (m != BossBullet_NUM_MAX) {
+							Bossbullet3[m].bossbullet.r = 4;
+							Bossbullet3[m].bossbullet.x = Boss1.boss.x;
+							Bossbullet3[m].bossbullet.y = Boss1.boss.y + Boss1.boss.r;
+							Bossbullet3[m].bossbullet.vx = -5;
+							Bossbullet3[m].bossbullet.vy = -Bossbullet3[m].bossbullet.vx*(player1.player.y - (Boss1.boss.y + Boss1.boss.r)) / (Boss1.boss.x-player1.player.x);
+							Bossbullet3[m].attack = 1;
+							Bossbullet3[m].bossbullet.valid_flag = 1;
+						}
+				}
+			}
+			
+
+			//プレイヤーを描画
+
+			DrawRotaGraph((int)player1.player.x, (int)player1.player.y, 1.0, 0.0, player1_gra, TRUE);
+
+			//zを押してると画面内に3発以下の場合弾を描画
+			if (CheckHitKey(KEY_INPUT_Z) != 0)
+			{
+				if (count % 20 == 0) {
+
+					int j;
+
+					//弾を追加できるか探索
+					for (j = 0; j < Bullet_NUM_MAX; j++)
+					{
+						//フラグが0ならば探索中止
+						if (bullet1[j].bullet.valid_flag == 0)
+						{
+							break;
+						}
+					}
+
+					//追加
+					if (j <= bullet1_max)
+					{
+						//設定
+						bullet1[j].bullet.r = 6;
+						bullet1[j].bullet.x = player1.player.x + player1.player.r;
+						bullet1[j].bullet.y = player1.player.y;
+						bullet1[j].bullet.vx = 10;
+						bullet1[j].bullet.vy = 0;
+						bullet1[j].attack = 1;
+						bullet1[j].bullet.valid_flag = 1;
+					}
+				}
+			}
+
+
+
+			//弾の更新・描画
+			for (int j = 0; j < Bullet_NUM_MAX; j++)
+			{
+				//フラグが0でなければ更新・描画
+				if (bullet1[j].bullet.valid_flag != 0)
+				{
+					//座標更新
+					bullet1[j].bullet.x += bullet1[j].bullet.vx;
+					bullet1[j].bullet.y += bullet1[j].bullet.vy;
+
+					for (int i = 0; i < ENEMY_NUM_MAX; i++)
+					{
+						if (enemy1[i].enemy.valid_flag != 0)
+						{
+							if (distance(enemy1[i].enemy,bullet1[j].bullet)< 0)
+							{
+								enemy1[i].hp -= bullet1[j].attack;
+							}
+
+							//画面外に出ていたら消す
+							if (bullet1[j].bullet.x > 640 + bullet1[j].bullet.r || bullet1[j].bullet.y < -bullet1[j].bullet.r || bullet1[j].bullet.y > 480 + bullet1[j].bullet.r || distance(enemy1[i].enemy, bullet1[j].bullet) < 0)
+							{
+								bullet1[j].bullet.valid_flag = 0;
+								continue;
+							}
+						}
+					}
+
+					if (bullet1[j].bullet.x > 640 + bullet1[j].bullet.r || bullet1[j].bullet.y < -bullet1[j].bullet.r || bullet1[j].bullet.y > 480 + bullet1[j].bullet.r)
+					{
+						bullet1[j].bullet.valid_flag = 0;
+						continue;
+					}
+
+					if (Boss1.boss.valid_flag != 0)
+					{
+						//ボスと弾
+						double x2 = Boss1.boss.x - bullet1[j].bullet.x;
+						double y2 = Boss1.boss.y - bullet1[j].bullet.y;
+						double r2 = Boss1.boss.r + bullet1[j].bullet.r;
+
+						if (distance(Boss1.boss, bullet1[j].bullet) < 0)
+						{
+							Boss1.hp -= bullet1[j].attack;
+							bullet1[j].bullet.valid_flag = 0;
+						}
+					}
+
+					DrawRotaGraph((int)bullet1[j].bullet.x, (int)bullet1[j].bullet.y, 1.0, 0.0, bullet_gra[3], TRUE);
+				}
+			}
+
+			for (int i = 0; i < ENEMY_NUM_MAX; i++)
+			{
+
+				//フラグが0でなければ更新・描画
+				if (enemy1[i].enemy.valid_flag != 0)
+				{
+					//座標更新
+					enemy1[i].enemy.x += enemy1[i].enemy.vx;
+					enemy1[i].enemy.y += enemy1[i].enemy.vy;
+
+					enebullet1[i].enebullet.x += enebullet1[i].enebullet.vx;
+					enebullet1[i].enebullet.y += enebullet1[i].enebullet.vy;
+
+					enebullet2[i].enebullet.x += enebullet2[i].enebullet.vx;
+					enebullet2[i].enebullet.y += enebullet2[i].enebullet.vy;
+
+					if (enemy1[i].hp <= 0)
+					{
+						scoreA += 100;
+					}
+					
+					//画面外に出ていたら消す
+					if (enemy1[i].enemy.x < -enemy1[i].enemy.r || enemy1[i].enemy.x > 640 + enemy1[i].enemy.r || enemy1[i].enemy.y < -enemy1[i].enemy.r || enemy1[i].enemy.y > 480 + enemy1[i].enemy.r )
+					{
+						enemy1[i].enemy.valid_flag = 0;
+						continue;
+					}
+					if ( enemy1[i].hp <= 0)
+					{
+						enemy1[i].enemy.valid_flag = 0;
+						if (bullet1_max<Bullet_NUM_MAX-1) {
+							int drop=0;
+							drop = GetRand(100);
+							if (drop >= 66) {
+								bullet1_max++;
+							}
+						}
+						continue;
+					}
+
+					//プレイヤーと当たったら終わる
+					if (distance(player1.player, enebullet1[i].enebullet) < 0 || distance(player1.player, enebullet2[i].enebullet) < 0 || distance(player1.player, enemy1[i].enemy) < 0)
+					{
+						//ヒットストップ
+						WaitTimer(1500);
+
+						for (int time = 0; time < 34; time++)
+						{
+							if (time % 2 == 0) {
+								DrawRotaGraph((int)player1.player.x, (int)player1.player.y, 1.0, 0, explode_gra[time], TRUE);
+							}
+							if (time == 33) {
+								//シーン遷移
+								scene = 2;
+							}
+						}
+					}
+					
+
+					//描画
+
+					DrawRotaGraph((int)enebullet1[i].enebullet.x, (int)enebullet1[i].enebullet.y, 1.0, 0.0, bullet_gra[0], TRUE);
+					DrawRotaGraph((int)enebullet2[i].enebullet.x, (int)enebullet2[i].enebullet.y, 1.0, 0.0, bullet_gra[1], TRUE);
+
+					DrawRotaGraph((int)enemy1[i].enemy.x, (int)enemy1[i].enemy.y, 1.0, 0.0, enemy1_gra, TRUE);
+				}
+			}
+
+
+			//ボスを描画
+			if (Boss1.boss.valid_flag != 0)
+			{
+				Boss1.boss.x += Boss1.boss.vx;
+				Boss1.boss.y += Boss1.boss.vy;
+				
+				if (Boss1.hp <= 0)
+				{
+					scoreA += 50000;
+				}
+
+				if (Boss1.hp <= 0)
+				{
+					Boss1.boss.valid_flag = 0;
+					scene = 3;
+				}
+
+				for (int l = 0; l < BossBullet_NUM_MAX; l++)
+				{
+					if (Bossbullet2[l].bossbullet.valid_flag != 0)
+					{
+						
+						Bossbullet2[l].bossbullet.x += Bossbullet2[l].bossbullet.vx;
+						Bossbullet2[l].bossbullet.y += Bossbullet2[l].bossbullet.vy;
+
+						if (distance(player1.player,Bossbullet2[l].bossbullet)<0)
+						{
+							//ヒットストップ
+							WaitTimer(1500);
+
+							for (int time = 0; time < 34; time++)
+							{
+								if (time % 2 == 0) {
+									DrawRotaGraph((int)player1.player.x, (int)player1.player.y, 1.0, 0, explode_gra[time], TRUE);
+								}
+								if (time == 33) {
+									//シーン遷移
+									scene = 2;
+								}
+							}
+						}
+
+						if (Bossbullet2[l].bossbullet.x < -Bossbullet2[l].bossbullet.r || Bossbullet2[l].bossbullet.y < -Bossbullet2[l].bossbullet.r || Bossbullet2[l].bossbullet.y > 480 + Bossbullet2[l].bossbullet.r)
+						{
+							Bossbullet2[l].bossbullet.valid_flag = 0;
+							continue;
+						}
+						DrawRotaGraph((int)Bossbullet2[l].bossbullet.x, (int)Bossbullet2[l].bossbullet.y, 1.0, 0.0, bullet_gra[1], TRUE);
+					}
+				}
+
+				for (int m = 0; m < BossBullet_NUM_MAX; m++)
+				{
+					if (Bossbullet3[m].bossbullet.valid_flag != 0)
+					{
+						Bossbullet3[m].bossbullet.x += Bossbullet3[m].bossbullet.vx;
+						Bossbullet3[m].bossbullet.y += Bossbullet3[m].bossbullet.vy;
+
+						if (distance(player1.player, Bossbullet3[m].bossbullet) < 0)
+						{
+							//ヒットストップ
+							WaitTimer(1500);
+
+							for (int time = 0; time < 34; time++)
+							{
+								if (time % 2 == 0) {
+									DrawRotaGraph((int)player1.player.x, (int)player1.player.y, 1.0, 0, explode_gra[time], TRUE);
+								}
+								if (time == 33) {
+									//シーン遷移
+									scene = 2;
+								}
+							}
+						}
+
+						if (Bossbullet3[m].bossbullet.x < -Bossbullet3[m].bossbullet.r || Bossbullet3[m].bossbullet.y < -Bossbullet3[m].bossbullet.r || Bossbullet3[m].bossbullet.y > 480 + Bossbullet3[m].bossbullet.r)
+						{
+							Bossbullet3[m].bossbullet.valid_flag = 0;
+							continue;
+						}
+						DrawRotaGraph((int)Bossbullet3[m].bossbullet.x, (int)Bossbullet3[m].bossbullet.y, 1.0, 0.0, bullet_gra[1], TRUE);
+					}
+					
+				}
+				for (int k = 0; k < BossBullet_NUM_MAX; k++)
+				{
+					if (Bossbullet1[k].bossbullet.valid_flag != 0)
+					{
+						Bossbullet1[k].bossbullet.x += Bossbullet1[k].bossbullet.vx;
+						Bossbullet1[k].bossbullet.y += Bossbullet1[k].bossbullet.vy;
+
+						if (distance(player1.player, Bossbullet1[k].bossbullet) < 0)
+						{
+							//ヒットストップ
+							WaitTimer(1500);
+
+							for (int time = 0; time < 34; time++)
+							{
+								if (time % 2 == 0) {
+									DrawRotaGraph((int)player1.player.x, (int)player1.player.y, 1.0, 0, explode_gra[time], TRUE);
+								}
+								if (time == 33) {
+									//シーン遷移
+									scene = 2;
+								}
+							}
+						}
+						if (Bossbullet1[k].bossbullet.x <-Bossbullet1[k].bossbullet.r || Bossbullet1[k].bossbullet.y < -Bossbullet1[k].bossbullet.r || Bossbullet1[k].bossbullet.y > 480 + Bossbullet1[k].bossbullet.r )
+						{
+							Bossbullet1[k].bossbullet.valid_flag = 0;
+							continue;
+						}
+						
+						DrawRotaGraph((int)Bossbullet1[k].bossbullet.x, (int)Bossbullet1[k].bossbullet.y, 1.0, 0.0, bullet_gra[0], TRUE);
+					}
+				}
+
+				if (distance(player1.player, Boss1.boss) < 0)
+				{
+					//ヒットストップ
+					WaitTimer(1500);
+
+					for (int time = 0; time < 34; time++)
+					{
+						if (time % 2 == 0) {
+							DrawRotaGraph((int)player1.player.x, (int)player1.player.y, 1.0, 0, explode_gra[time], TRUE);
+						}
+						if (time == 33) {
+							//シーン遷移
+							scene = 2;
+						}
+
+					}
+				}
+				DrawRotaGraph((int)Boss1.boss.x, (int)Boss1.boss.y, 1.0, 0.0, Boss1_gra, TRUE);
+			}
+
+			count++;
+			score = (count / 6) + scoreA;
+			DrawFormatString(500, 0, GetColor(255, 255, 255), "SCORE:%d", score);
+			DrawFormatString(0, 0, GetColor(255, 255, 255), "TIME=%d", count / 60);
+		}
+
+		//リザルト画面
+		else if (scene == 2)
+		{
+			score = (count / 6) + scoreA;
+			//背景を描画
+			DrawBox(0, 0, 640, 480, GetColor(0, 0, 64), 1);
+
+			//スコアを描画
+			DrawFormatString(240, 240, GetColor(255, 0, 0), "GAME OVER\nFINAL SCORE:%d\nRetry:Press Space Key", score);
+			if (CheckHitKey(KEY_INPUT_SPACE) == 1)
+			{
+				//ゲーム画面に遷移
+				scene = 0;
+			}
+		}
+
+		else if (scene == 3)
+		{
+			score = (count / 6) + scoreA;
+			//背景を描画
+			DrawBox(0, 0, 640, 480, GetColor(0, 255, 0), 1);
+
+			//スコアを描画
+			DrawFormatString(240, 240, GetColor(255, 255, 255), "Crear\nFINAL SCORE:%d\nNew Game:Press Space Key", score);
+			if (CheckHitKey(KEY_INPUT_SPACE) == 1)
+			{
+				//ゲーム画面に遷移
+				scene = 0;
+			}
+		}
+		//裏画面の内容を表画面に反映させる
+		ScreenFlip();
+	}
+	DxLib_End(); //ＤＸライブラリ使用の終了処理
+
+	return 0; // ソフトの終了 
+}
